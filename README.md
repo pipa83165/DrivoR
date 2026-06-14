@@ -10,6 +10,8 @@ DrivoR: an end-to-end driving model by driving on registers.
 [**Paper**](https://arxiv.org/abs/2601.05083)
 
 # Updates
+:sparkles:  Follow-up paper: [**TOAD**](https://valeoai.github.io/publications/TOAD/) shows DrivoR's scorer can be used as a reward to search for better trajectories at test time, setting a new state of the art on NAVSIM-v2 (56.3 EPDMS)! 
+
 :sparkles:  Driving on Registers is accepted to CVPR 2026!
 
 :sparkles:  We provide the [scaling](https://github.com/valeoai/DrivoR?tab=readme-ov-file#scaling-with-drivor) experiments and checkpoints.
