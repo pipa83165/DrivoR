@@ -9,7 +9,7 @@ from datetime import datetime
 import hydra
 import numpy as np
 from hydra.utils import instantiate
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 import torch.distributed as dist
 import pytorch_lightning as pl
@@ -28,7 +28,7 @@ CONFIG_NAME = "default_training"
 def dist_ready():
     return dist.is_available() and dist.is_initialized()
 
-def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Dataset]:
+def build_datasets(cfg: DictConfig, agent: AbstractAgent, vggt_geometry_cfg=None) -> Tuple[Dataset, Dataset]:
     """
     Builds training and validation datasets from omega config
     :param cfg: omegaconf dictionary
@@ -77,6 +77,7 @@ def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Data
         target_builders=agent.get_target_builders(),
         cache_path=cfg.cache_path,
         force_cache_computation=cfg.force_cache_computation,
+        vggt_geometry_cfg=vggt_geometry_cfg,
     )
 
     val_data = Dataset(
@@ -85,6 +86,7 @@ def build_datasets(cfg: DictConfig, agent: AbstractAgent) -> Tuple[Dataset, Data
         target_builders=agent.get_target_builders(),
         cache_path=cfg.cache_path,
         force_cache_computation=cfg.force_cache_computation,
+        vggt_geometry_cfg=vggt_geometry_cfg,
     )
 
     return train_data, val_data
@@ -109,6 +111,7 @@ def main(cfg: DictConfig) -> None:
     lightning_module = AgentLightningModule(
         agent=agent,
     )
+    vggt_geometry_cfg = OmegaConf.select(cfg, "agent.config.vggt_geometry")
 
     if cfg.use_cache_without_dataset:
         logger.info("Using cached data without building SceneLoader")
@@ -123,16 +126,18 @@ def main(cfg: DictConfig) -> None:
             feature_builders=agent.get_feature_builders(),
             target_builders=agent.get_target_builders(),
             log_names=cfg.train_logs,
+            vggt_geometry_cfg=vggt_geometry_cfg,
         )
         val_data = CacheOnlyDataset(
             cache_path=cfg.cache_path,
             feature_builders=agent.get_feature_builders(),
             target_builders=agent.get_target_builders(),
             log_names=cfg.val_logs,
+            vggt_geometry_cfg=vggt_geometry_cfg,
         )
     else:
         logger.info("Building SceneLoader")
-        train_data, val_data = build_datasets(cfg, agent)
+        train_data, val_data = build_datasets(cfg, agent, vggt_geometry_cfg=vggt_geometry_cfg)
 
     logger.info("Building Datasets")
     train_dataloader = DataLoader(train_data, **cfg.dataloader.params, shuffle=True,drop_last=True)

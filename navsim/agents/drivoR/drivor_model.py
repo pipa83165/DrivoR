@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Any, Dict
 import numpy as np
 import torch
 import torch.nn as nn
@@ -6,6 +6,7 @@ from .score_module.scorer import Scorer
 from .transformer_decoder import TransformerDecoder, TransformerDecoderScorer
 from .layers.image_encoder.dinov2_lora import ImgEncoder
 from .layers.utils.mlp import MLP
+from .vggt_geometry import FrozenVggtGeometryTeacher, VggtGeometryProjector, cfg_get, tokens_per_camera
 from navsim.agents.drivoR.utils import pylogger
 log = pylogger.get_pylogger(__name__)
 import logging
@@ -101,10 +102,62 @@ class DrivoRModel(nn.Module):
         # scorer
         self.scorer = Scorer(config)
 
-        self.b2d=config.b2d
+        self.b2d = config.b2d
+
+        vggt_geometry_cfg = cfg_get(config, "vggt_geometry", None)
+        self.vggt_geometry_cfg = vggt_geometry_cfg
+        self.vggt_geometry_enabled = bool(vggt_geometry_cfg and cfg_get(vggt_geometry_cfg, "enabled", False))
+        self.vggt_geometry_mode = "normal"
+        self.vggt_geometry_source = "cache"
+        self.__dict__["_vggt_geometry_teacher"] = None
+        if self.vggt_geometry_enabled:
+            self.vggt_geometry_mode = str(cfg_get(vggt_geometry_cfg, "mode", "normal"))
+            self.vggt_geometry_source = str(cfg_get(vggt_geometry_cfg, "source", "cache"))
+            if self.vggt_geometry_mode not in ("normal", "shuffle", "noise", "drop"):
+                raise ValueError(f"Unknown VGGT geometry mode: {self.vggt_geometry_mode}")
+            if self.vggt_geometry_source not in ("cache", "online"):
+                raise ValueError(f"Unknown VGGT geometry source: {self.vggt_geometry_source}")
+
+            self.vggt_geometry_tokens_per_cam = tokens_per_camera(vggt_geometry_cfg)
+            self.vggt_geometry_projector = VggtGeometryProjector(
+                int(cfg_get(vggt_geometry_cfg, "vggt_dim", 2048)),
+                config.tf_d_model,
+                num_cams=4,
+                tokens_per_cam=self.vggt_geometry_tokens_per_cam,
+            )
+
+            if self.vggt_geometry_source == "online":
+                self.__dict__["_vggt_geometry_teacher"] = FrozenVggtGeometryTeacher(
+                    cfg_get(vggt_geometry_cfg, "checkpoint_path"),
+                    use_camera_token=bool(cfg_get(vggt_geometry_cfg, "use_camera_token", False)),
+                    joint_forward=bool(cfg_get(vggt_geometry_cfg, "joint_forward", True)),
+                )
+
+    def _extend_memory_with_vggt_geometry(self, scene_features: torch.Tensor, features: Dict[str, Any]) -> torch.Tensor:
+        # Drop mode physically removes geometry tokens in eval instead of appending zero keys.
+        if self.vggt_geometry_mode == "drop" and not self.training:
+            return scene_features
+
+        if "vggt_geometry_tokens" in features:
+            geo = features["vggt_geometry_tokens"].to(scene_features.device)
+        elif self.vggt_geometry_source == "online":
+            teacher_images = features.get("vggt_teacher_images", features.get("vggt_images"))
+            if teacher_images is None:
+                raise RuntimeError("VGGT geometry online source needs features['vggt_teacher_images']")
+            teacher = self.__dict__.get("_vggt_geometry_teacher")
+            if teacher is None:
+                raise RuntimeError("VGGT geometry online source is enabled, but the frozen teacher was not built")
+            if next(teacher.parameters()).device != scene_features.device:
+                teacher.to(scene_features.device)
+            geo = teacher(teacher_images.to(device=scene_features.device, dtype=torch.float32, non_blocking=True))
+        else:
+            raise RuntimeError("VGGT geometry source=cache is enabled, but features['vggt_geometry_tokens'] is missing")
+
+        geo = self.vggt_geometry_projector(geo).to(scene_features.dtype)
+        return torch.cat([scene_features, geo], dim=1)
 
 
-    def forward(self, features: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+    def forward(self, features: Dict[str, Any]) -> Dict[str, torch.Tensor]:
         
         # ego status and initial traj tokens
         if self._config.full_history_status:
@@ -148,6 +201,11 @@ class DrivoRModel(nn.Module):
             scene_features.append(lidar_scene_tokens)
 
         scene_features = torch.cat(scene_features, dim=1)
+
+        # Append frozen VGGT-Omega geometry tokens only at decoder memory.
+        if self.vggt_geometry_enabled:
+            scene_features = self._extend_memory_with_vggt_geometry(scene_features, features)
+        vggt_geometry_memory_len = scene_features.shape[1]
         log.debug(f"Scene features - {scene_features.shape}")
 
         # initial trajectories
@@ -170,6 +228,8 @@ class DrivoRModel(nn.Module):
         output={}
         output["proposals"] = proposals
         output["proposal_list"] = proposal_list
+        if self.vggt_geometry_enabled:
+            output["vggt_geometry_memory_len"] = vggt_geometry_memory_len
 
         # scoring
         B,N,_,_=proposals.shape

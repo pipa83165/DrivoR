@@ -28,6 +28,23 @@ config:
   tf_d_ffn: 1024 # hidden size of the heads
 
   ####################
+  # Frozen VGGT-Omega parallel geometry branch at decoder memory
+  vggt_geometry:
+    enabled: false
+    mode: normal            # normal | shuffle | noise | drop
+    source: cache           # cache for training; online for eval/latency
+    cache_dir: null
+    checkpoint_path: weights/vggt_omega_1b_512.pt
+    vggt_dim: 2048          # frame-attn(1024) || global-attn(1024)
+    num_registers: 16
+    use_camera_token: false
+    joint_forward: true
+    preprocess_mode: balanced   # official VGGT-Omega default; max_size is C3a
+    image_resolution: 512
+    shuffle_seed: 20260704
+    force_ignore_fingerprint: false
+
+  ####################
   # sensor config
   cam_f0: [3]
   cam_l0: [3]
