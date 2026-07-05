@@ -106,7 +106,6 @@ def main(cfg: DictConfig) -> None:
     lightning_module = AgentLightningModule(
         agent=agent,
     )
-
     if cfg.use_cache_without_dataset:
         logger.info("Using cached data without building SceneLoader")
         assert (

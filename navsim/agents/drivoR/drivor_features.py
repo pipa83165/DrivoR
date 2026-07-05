@@ -41,8 +41,6 @@ class DrivoRFeatureBuilder(AbstractFeatureBuilder):
         features = {}
         data_camera = self._get_camera_feature(agent_input)
         features.update(data_camera)
-
-
         if len(self._config.lidar_pc) > 0:
             data_lidar = self._get_lidar_feature(agent_input)
             features.update(data_lidar)
@@ -72,6 +70,7 @@ class DrivoRFeatureBuilder(AbstractFeatureBuilder):
         """
 
         cameras = agent_input.cameras[-1]
+        cameras_all = cameras
 
         # cameras = [cameras.cam_b0, cameras.cam_f0, cameras.cam_l0, cameras.cam_l1, cameras.cam_l2, cameras.cam_r0, cameras.cam_r1, cameras.cam_r2]
 
@@ -127,6 +126,22 @@ class DrivoRFeatureBuilder(AbstractFeatureBuilder):
             "cam_K": torch.stack(cam_Ks),
             "world_2_cam": torch.stack(lidar2cams)
         }
+
+        vggt_geometry_cfg = self._config.get("vggt_geometry", {})
+        if vggt_geometry_cfg.get("enabled", False) and vggt_geometry_cfg.get("source", "cache") == "online":
+            from navsim.agents.drivoR.vggt_geometry import VGGT_GEOMETRY_CAMERA_ORDER, preprocess_arrays_for_teacher
+
+            raw_images = []
+            for camera_name in VGGT_GEOMETRY_CAMERA_ORDER:
+                cam = getattr(cameras_all, camera_name)
+                if cam.image is None:
+                    raise ValueError(f"Missing VGGT geometry camera image: {camera_name}")
+                raw_images.append(cam.image)
+            data["vggt_teacher_images"] = preprocess_arrays_for_teacher(
+                raw_images,
+                mode=vggt_geometry_cfg.get("preprocess_mode", "balanced"),
+                image_resolution=int(vggt_geometry_cfg.get("image_resolution", 512)),
+            )
         
         # raise NotImplementedError
 

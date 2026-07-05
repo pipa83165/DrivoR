@@ -28,6 +28,57 @@ def dump_feature_target_to_pickle(path: Path, data_dict: Dict[str, torch.Tensor]
         pickle.dump(data_dict, f)
 
 
+def _setup_vggt_geometry_cfg(vggt_geometry_cfg):
+    if vggt_geometry_cfg is None:
+        return None
+
+    from navsim.agents.drivoR.vggt_geometry import build_fingerprint_from_cfg, cache_dir_from_cfg, cfg_get, validate_fingerprint
+
+    if not cfg_get(vggt_geometry_cfg, "enabled", False):
+        return None
+    if str(cfg_get(vggt_geometry_cfg, "source", "cache")) != "cache":
+        return None
+
+    validate_fingerprint(
+        build_fingerprint_from_cfg(vggt_geometry_cfg),
+        cache_dir_from_cfg(vggt_geometry_cfg),
+        force_ignore=bool(cfg_get(vggt_geometry_cfg, "force_ignore_fingerprint", False)),
+    )
+    return vggt_geometry_cfg
+
+
+def _vggt_geometry_worker_offset() -> int:
+    info = torch.utils.data.get_worker_info()
+    worker_id = info.id if info else 0
+    num_workers = info.num_workers if info else 1
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        rank = torch.distributed.get_rank()
+    else:
+        rank = int(os.environ.get("RANK", 0))
+    return rank * num_workers + worker_id
+
+
+def _add_vggt_geometry_tokens(dataset, features: Dict[str, torch.Tensor], token: str) -> None:
+    if dataset._vggt_geometry_cfg is None:
+        return
+
+    from navsim.agents.drivoR.vggt_geometry import VggtGeometryTokenProvider, cache_dir_from_cfg, cfg_get, tokens_per_camera
+
+    if dataset._vggt_geometry_provider is None:
+        dataset._vggt_geometry_provider = VggtGeometryTokenProvider(
+            cache_dir_from_cfg(dataset._vggt_geometry_cfg),
+            mode=str(cfg_get(dataset._vggt_geometry_cfg, "mode", "normal")),
+            shuffle_seed=int(cfg_get(dataset._vggt_geometry_cfg, "shuffle_seed", 20260704)),
+            expected_shape=(
+                4,
+                tokens_per_camera(dataset._vggt_geometry_cfg),
+                int(cfg_get(dataset._vggt_geometry_cfg, "vggt_dim", 2048)),
+            ),
+            worker_offset=_vggt_geometry_worker_offset(),
+        )
+    features["vggt_geometry_tokens"] = dataset._vggt_geometry_provider.get(str(token))
+
+
 class CacheOnlyDataset(torch.utils.data.Dataset):
     """Dataset wrapper for feature/target datasets from cache only."""
 
@@ -37,6 +88,7 @@ class CacheOnlyDataset(torch.utils.data.Dataset):
         feature_builders: List[AbstractFeatureBuilder],
         target_builders: List[AbstractTargetBuilder],
         log_names: Optional[List[str]] = None,
+        vggt_geometry_cfg=None,
     ):
         """
         Initializes the dataset module.
@@ -63,6 +115,8 @@ class CacheOnlyDataset(torch.utils.data.Dataset):
             log_names=self.log_names,
         )
         self.tokens = list(self._valid_cache_paths.keys())
+        self._vggt_geometry_cfg = _setup_vggt_geometry_cfg(vggt_geometry_cfg)
+        self._vggt_geometry_provider = None
 
     def __len__(self) -> int:
         """
@@ -129,6 +183,8 @@ class CacheOnlyDataset(torch.utils.data.Dataset):
             data_dict = load_feature_target_from_pickle(data_dict_path)
             targets.update(data_dict)
 
+        features["scenario_token"] = token
+        _add_vggt_geometry_tokens(self, features, token)
         return (features, targets)
 
 
@@ -141,6 +197,7 @@ class Dataset(torch.utils.data.Dataset):
         cache_path: Optional[str] = None,
         force_cache_computation: bool = False,
         append_token_to_batch: bool = False,
+        vggt_geometry_cfg=None,
     ):
         super().__init__()
         self._scene_loader = scene_loader
@@ -153,6 +210,8 @@ class Dataset(torch.utils.data.Dataset):
             self._cache_path, feature_builders, target_builders
         )
         self.append_token_to_batch = append_token_to_batch
+        self._vggt_geometry_cfg = _setup_vggt_geometry_cfg(vggt_geometry_cfg)
+        self._vggt_geometry_provider = None
         if self._cache_path is not None:
             self.cache_dataset()
 
@@ -287,6 +346,7 @@ class Dataset(torch.utils.data.Dataset):
                 targets.update(builder.compute_targets(scene))
 
         features["scenario_token"] = token
+        _add_vggt_geometry_tokens(self, features, token)
         if self.append_token_to_batch:
             return (features, targets, token)
         else:

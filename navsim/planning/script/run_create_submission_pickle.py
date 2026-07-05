@@ -75,8 +75,9 @@ def run_test_evaluation(
 
         if len(feature_list)==64 or (len(output)>=len(input_loader)//64*64):
             features=default_collate(feature_list)
+            features["scenario_token"] = list(token_list)
 
-            features={key:value.cuda() for key,value in features.items()}
+            features={key: value.cuda() if isinstance(value, torch.Tensor) else value for key,value in features.items()}
             # forward pass
             with torch.no_grad():
                 predictions = agent.forward(features)
