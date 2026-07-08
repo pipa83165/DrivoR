@@ -1,1 +1,0 @@
-cat /high_perf_store3/world-model/weixiaobao/yzj/DrivoR/navsim/agents/drivoR/layers/image_encoder/dinov2_lora.py
