@@ -73,6 +73,10 @@ def check_lora(checkpoint_path: str, device: torch.device) -> None:
     loss = torch.zeros((), device=device)
     for block, sample, before in zip(blocks, inputs, outputs_before):
         after = block.attn.qkv(sample)
+        if block.attn.qkv.in_features != block.attn.qkv.qkv.in_features:
+            raise AssertionError("LoRA wrapper did not preserve qkv.in_features")
+        if block.attn(sample).shape != sample.shape:
+            raise AssertionError("LoRA-wrapped attention changed the output shape")
         dim = block.attn.qkv.dim
         if not torch.equal(before, after):
             raise AssertionError("Zero-initialized LoRA changed qkv output")

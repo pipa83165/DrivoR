@@ -116,6 +116,7 @@ class _LoRA_qkv_timm(nn.Module):
         self.linear_b_v = linear_b_v
         self.linear_a_k = linear_a_k
         self.linear_b_k = linear_b_k
+        self.in_features = qkv.in_features
         self.dim = qkv.in_features
         self.w_identity = torch.eye(qkv.in_features)
 
