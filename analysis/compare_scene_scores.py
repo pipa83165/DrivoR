@@ -156,8 +156,12 @@ def bootstrap_ci(values: np.ndarray, samples: int, rng: np.random.Generator) -> 
     if len(values) == 0 or samples <= 0:
         return np.nan, np.nan
     means = np.empty(samples, dtype=np.float64)
-    for sample_idx in range(samples):
-        means[sample_idx] = rng.choice(values, size=len(values), replace=True).mean()
+    # Chunked resampling keeps the index matrix below ~100MB for large scene sets.
+    chunk = max(1, min(samples, 10_000_000 // len(values)))
+    for start in range(0, samples, chunk):
+        stop = min(samples, start + chunk)
+        indices = rng.integers(0, len(values), size=(stop - start, len(values)))
+        means[start:stop] = values[indices].mean(axis=1)
     return float(np.quantile(means, 0.025)), float(np.quantile(means, 0.975))
 
 

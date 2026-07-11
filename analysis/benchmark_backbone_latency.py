@@ -12,7 +12,6 @@ from typing import List, Tuple
 
 import torch
 import torch.nn as nn
-from einops import rearrange
 
 from drivor_analysis_utils import build_image_backbone_config, merge_lora_to_backbone
 from navsim.agents.drivoR.layers.image_encoder.dinov2_lora import ImgEncoder
@@ -162,7 +161,7 @@ def print_table(title: str, rows: List[Tuple[int, float, float]], baseline=None)
 
 def main() -> None:
     args = parse_args()
-    device = torch.device(args.device if args.device == "cpu" or torch.cuda.is_available() else "cpu")
+    device = torch.device(args.device)
     print(f"[benchmark] device={device}")
     print("[benchmark] scope=image backbone only; C1 online VGGT teacher cost is not included")
 

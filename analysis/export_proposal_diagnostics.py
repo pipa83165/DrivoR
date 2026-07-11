@@ -11,8 +11,6 @@ from typing import Dict, List
 import numpy as np
 import pandas as pd
 import torch
-from hydra.utils import instantiate
-from omegaconf import OmegaConf
 from tqdm import tqdm
 
 from drivor_analysis_utils import (
@@ -20,6 +18,7 @@ from drivor_analysis_utils import (
     build_scene_loader,
     disable_backbone_grid_mask,
     instantiate_agent,
+    load_scoring_components,
     load_training_config,
     make_dataloader,
     move_to_device,
@@ -59,18 +58,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--num_scenes", type=int, default=-1)
     parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--num_workers", type=int, default=0)
-    parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument("--device", default="cuda")
     parser.add_argument("--hydra_override", action="append", default=[])
     return parser.parse_args()
-
-
-def load_scoring_components(config_path: str):
-    config = OmegaConf.load(config_path)
-    simulator = instantiate(config.simulator)
-    scorer = instantiate(config.scorer)
-    if simulator.proposal_sampling != scorer.proposal_sampling:
-        raise AssertionError("Simulator and scorer proposal sampling must be identical")
-    return simulator, scorer
 
 
 def score_proposals(
@@ -166,7 +156,7 @@ def main() -> None:
     if args.sensor_blobs_path:
         set_cfg_value(cfg, "sensor_blobs_path", args.sensor_blobs_path)
 
-    device = torch.device(args.device if args.device == "cpu" or torch.cuda.is_available() else "cpu")
+    device = torch.device(args.device)
     agent = instantiate_agent(cfg, args.ckpt_path, device)
     disable_backbone_grid_mask(agent)
 

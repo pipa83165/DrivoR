@@ -13,11 +13,9 @@ from typing import Dict, List
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 import pandas as pd
-from hydra.utils import instantiate
-from omegaconf import OmegaConf
 from tqdm import tqdm
 
-from drivor_analysis_utils import build_scene_loader
+from drivor_analysis_utils import build_scene_loader, load_scoring_components
 from navsim.common.dataclasses import SensorConfig
 from navsim.common.dataloader import MetricCacheLoader
 from navsim.evaluate.pdm_score import pdm_score
@@ -39,21 +37,12 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def load_scoring_configs(config_path: str):
-    cfg = OmegaConf.load(config_path)
-    simulator = instantiate(cfg.simulator)
-    scorer = instantiate(cfg.scorer)
-    if simulator.proposal_sampling != scorer.proposal_sampling:
-        raise AssertionError("Simulator and scorer proposal sampling must be identical")
-    return simulator, scorer
-
-
 def main() -> None:
     args = parse_args()
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    simulator, scorer = load_scoring_configs(args.config_path)
+    simulator, scorer = load_scoring_components(args.config_path)
     metric_cache_loader = MetricCacheLoader(Path(args.metric_cache_path))
     print(f"Metric cache tokens: {len(metric_cache_loader.tokens)}")
 
@@ -98,7 +87,7 @@ def main() -> None:
     if len(df) == 0:
         raise RuntimeError("No GT trajectories were evaluated")
 
-    valid_df = df[df["valid"] == True]
+    valid_df = df[df["valid"].astype(bool)]
     if len(valid_df) > 0:
         avg_row = valid_df.drop(columns=["token", "valid"]).mean(skipna=True)
         avg_row["token"] = "average"
@@ -127,7 +116,7 @@ def main() -> None:
                 f"min={vals.min():.4f}, max={vals.max():.4f}, "
                 f"zero={(vals == 0).sum():4d} / {len(vals)}"
             )
-        print(f"\n  Valid scenes: {len(valid_df)} / {len(df) - 1 if len(valid_df) > 0 else len(df)}")
+        print(f"\n  Valid scenes: {len(valid_df)} / {len(df) - 1}")
 
 
 if __name__ == "__main__":

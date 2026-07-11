@@ -53,7 +53,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--queries", type=str, default="0", help="Scene-token query indices by default")
     parser.add_argument("--samples", type=str, default="0", help="Batch sample indices to render")
     parser.add_argument("--merge_lora", action="store_true")
-    parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--hydra_override", action="append", default=[])
     return parser.parse_args()
 
@@ -258,7 +258,7 @@ def main() -> None:
     if args.sensor_blobs_path:
         set_cfg_value(cfg, "sensor_blobs_path", args.sensor_blobs_path)
 
-    device = torch.device(args.device if args.device == "cpu" or torch.cuda.is_available() else "cpu")
+    device = torch.device(args.device)
     agent = instantiate_agent(cfg, args.ckpt_path, device)
     disable_backbone_grid_mask(agent)
     if args.merge_lora:

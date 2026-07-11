@@ -77,6 +77,21 @@ def get_vggt_geometry_cfg(cfg: DictConfig):
     return OmegaConf.select(cfg, "agent.config.vggt_geometry")
 
 
+def load_scoring_components(config_path: str):
+    """Instantiate the PDM simulator/scorer pair from a scoring parameters YAML."""
+    path = expand_path(config_path)
+    if path is None:
+        raise ValueError("config_path is required")
+    if not path.is_absolute():
+        path = REPO_ROOT / path
+    cfg = OmegaConf.load(path)
+    simulator = instantiate(cfg.simulator)
+    scorer = instantiate(cfg.scorer)
+    if simulator.proposal_sampling != scorer.proposal_sampling:
+        raise AssertionError("Simulator and scorer proposal sampling must be identical")
+    return simulator, scorer
+
+
 def instantiate_agent(
     cfg: DictConfig,
     checkpoint_path: Optional[str],

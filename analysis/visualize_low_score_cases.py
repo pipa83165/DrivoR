@@ -47,7 +47,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--num_scenes", type=int, default=-1)
     parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--num_workers", type=int, default=0)
-    parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--tokens_per_figure", type=int, default=10)
     parser.add_argument("--proposal_index", type=int, default=-1, help="-1 uses predictions['trajectory']; otherwise proposals[:, idx]")
     parser.add_argument("--keep_split_log_names", action="store_true", help="Do not clear split log_names when filtering tokens")
@@ -148,7 +148,7 @@ def main() -> None:
     if args.sensor_blobs_path:
         set_cfg_value(cfg, "sensor_blobs_path", args.sensor_blobs_path)
 
-    device = torch.device(args.device if args.device == "cpu" or torch.cuda.is_available() else "cpu")
+    device = torch.device(args.device)
     agent = instantiate_agent(cfg, args.ckpt_path, device)
     disable_backbone_grid_mask(agent)
 

@@ -1,18 +1,19 @@
-# DrivoR Analysis Scripts Usage
+# DrivoR 分析脚本使用说明
 
-This directory contains analysis scripts adapted from `vit_ar-Merged_sh/quantize/analysis`
-for the current DrivoR repository. The migrated set intentionally excludes
-`dxdy`, `dvdyaw`, `a/alpha`, and tokenizer-related analysis.
 
-## Environment
+公共辅助函数集中在 `drivor_analysis_utils.py`（配置组合、agent 实例化、SceneLoader/Dataset
+构建、PDM simulator/scorer 加载、LoRA 合并等）。`analyze_score_distribution.py` 与
+`compare_scene_scores.py` 是纯 pandas 脚本，不依赖 torch/navsim，可在任意机器上单独运行。
 
-Run commands from the repository root:
+## 环境准备
+
+所有命令都在仓库根目录下执行：
 
 ```bash
 cd /high_perf_store3/world-model/weixiaobao/yzj/DrivoR
 ```
 
-Recommended environment variables:
+推荐设置以下环境变量：
 
 ```bash
 export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
@@ -24,8 +25,7 @@ export HYDRA_FULL_ERROR=1
 export SUBSCORE_PATH="$NAVSIM_EXP_ROOT"
 ```
 
-If you use VGGT geometry cache mode, pass the same Hydra overrides used for
-training/evaluation, especially:
+如果使用 VGGT 几何缓存模式，请传入与训练/评测时相同的 Hydra 覆盖项，尤其是：
 
 ```bash
 agent.config.vggt_geometry.enabled=true
@@ -33,9 +33,9 @@ agent.config.vggt_geometry.source=cache
 agent.config.vggt_geometry.cache_dir=c1/vggtomega_geometry_tokens
 ```
 
-## 1. Score CSV Distribution
+## 1. 分数 CSV 分布分析
 
-Analyze a PDM score CSV and export bottom-score tokens.
+分析 PDM 分数 CSV，并导出低分场景 token 列表。
 
 ```bash
 python3 analysis/analyze_score_distribution.py \
@@ -44,27 +44,26 @@ python3 analysis/analyze_score_distribution.py \
   --low_score_ratio 0.3
 ```
 
-Outputs:
+输出文件：
 
-- `score_statistics.csv`
-- `score_histograms.png`
-- `score_boxplots.png`
-- `score_correlation.png`
-- `low_score_tokens_bottom30pct.txt`
-- `low_score_cases_bottom30pct.csv`
+- `score_statistics.csv`：各指标的统计量
+- `score_histograms.png`：各子分数直方图
+- `score_boxplots.png`：子分数箱线图
+- `score_correlation.png`：分数相关性热力图
+- `low_score_tokens_bottom30pct.txt`：低分场景 token 列表
+- `low_score_cases_bottom30pct.csv`：低分场景明细
 
-Default behavior:
+默认行为：
 
-- Drops pandas `Unnamed:*` index columns.
-- Excludes `valid=False` rows when a `valid` column exists.
-- Excludes the summary row where `token == "average"`.
+- 自动丢弃 pandas 的 `Unnamed:*` 索引列。
+- 若存在 `valid` 列，剔除 `valid=False` 的行。
+- 剔除 `token == "average"` 的汇总行。
 
-Use `--include_invalid` or `--include_average` only for debugging.
+`--include_invalid` 和 `--include_average` 仅用于调试。
 
-## 2. Low-Score BEV Visualization
+## 2. 低分场景 BEV 可视化
 
-Visualize model prediction versus GT trajectory for tokens exported by score
-analysis.
+对分数分析导出的 token，可视化模型预测轨迹与 GT 轨迹的对比。
 
 ```bash
 python3 analysis/visualize_low_score_cases.py \
@@ -79,8 +78,8 @@ python3 analysis/visualize_low_score_cases.py \
   --batch_size 1
 ```
 
-By default it visualizes `predictions["trajectory"]`, i.e. the model-selected
-trajectory. To draw a specific proposal instead:
+默认可视化 `predictions["trajectory"]`，即模型最终选中的轨迹。如需画某一条指定
+proposal：
 
 ```bash
 python3 analysis/visualize_low_score_cases.py \
@@ -89,7 +88,7 @@ python3 analysis/visualize_low_score_cases.py \
   --proposal_index 0
 ```
 
-For VGGT geometry cache mode, add repeatable Hydra overrides:
+VGGT 几何缓存模式下追加可重复的 Hydra 覆盖项：
 
 ```bash
 python3 analysis/visualize_low_score_cases.py \
@@ -100,9 +99,9 @@ python3 analysis/visualize_low_score_cases.py \
   --hydra_override agent.config.vggt_geometry.cache_dir=c1/vggtomega_geometry_tokens
 ```
 
-## 3. GT Trajectory PDM Score
+## 3. GT 轨迹 PDM 评分
 
-Evaluate human GT trajectories through the same PDM scoring stack.
+将人类 GT 轨迹送入同一套 PDM 评分流程打分。
 
 ```bash
 python3 analysis/evaluate_gt_trajectory.py \
@@ -114,16 +113,16 @@ python3 analysis/evaluate_gt_trajectory.py \
   --output_dir analysis_output/gt_score_analysis
 ```
 
-Output:
+输出：
 
 - `gt_pdm_scores.csv`
 
-For a quick smoke test, use `--num_scenes 2`.
+快速冒烟测试可用 `--num_scenes 2`。
 
-## 4. Proposal Generation vs Ranking Diagnostics
+## 4. Proposal 生成 vs 排序诊断
 
-Export the true PDM quality of every final decoder proposal together with the
-proposal selected by DrivoR's learned scorer:
+导出最终解码器每条 proposal 的真实 PDM 质量，以及 DrivoR 学习到的 scorer
+实际选中的 proposal：
 
 ```bash
 python3 analysis/export_proposal_diagnostics.py \
@@ -135,34 +134,31 @@ python3 analysis/export_proposal_diagnostics.py \
   --output_dir analysis_output/baseline_proposal_diagnostics
 ```
 
-For a geometry-enabled checkpoint, pass the same repeatable
-`--hydra_override` values used for evaluation. The script uses the current
-Dataset path, including geometry-cache injection.
+评测带几何分支的 checkpoint 时，传入与评测阶段相同的可重复 `--hydra_override`。
+脚本走当前 Dataset 路径，包含几何缓存注入。
 
-Outputs:
+输出文件：
 
-- `proposal_diagnostics.csv`: one row per scene with selected score, oracle
-  score, ranking regret, hit@1/hit@5, and selected/oracle subscores.
-- `proposal_scores.csv`: one row per proposal with predicted score, true PDM
-  score, subscores, and selected/oracle flags.
+- `proposal_diagnostics.csv`：每个场景一行，含选中分数、oracle 分数、排序
+  regret、hit@1/hit@5，以及选中/oracle 的各子分数。
+- `proposal_scores.csv`：每条 proposal 一行，含预测分数、真实 PDM 分数、
+  各子分数，以及是否被选中/是否为 oracle 的标记。
 
-Definitions:
+定义：
 
 ```text
-oracle_score = max(true proposal PDM scores)
+oracle_score = max(每条 proposal 的真实 PDM 分数)
 ranking_regret = oracle_score - selected_score
 ```
 
-Proposal truth scores use `navsim.evaluate.pdm_score` and the standard scoring
-configuration. Each proposal is evaluated independently against the cached PDM
-reference trajectory, matching the normal single-trajectory evaluation
-semantics; the script does not require training-only `metric_cache.pdm_progress`.
+proposal 真实分数使用 `navsim.evaluate.pdm_score` 和标准评分配置计算。每条
+proposal 独立地对照缓存的 PDM 参考轨迹评测，与常规单轨迹评测语义一致；脚本
+不依赖仅训练期可用的 `metric_cache.pdm_progress`。
 
-## 5. Paired Scene-Level Delta and Slice Analysis
+## 5. 场景级配对差值与切片分析
 
-Compare either two normal PDM score CSVs or two `proposal_diagnostics.csv`
-files. Inputs are joined by token; invalid/average rows are removed and
-unmatched tokens are reported.
+对比两份普通 PDM 分数 CSV，或两份 `proposal_diagnostics.csv`。输入按 token
+对齐；invalid/average 行会被剔除，未匹配的 token 会单独报告。
 
 ```bash
 python3 analysis/compare_scene_scores.py \
@@ -173,17 +169,16 @@ python3 analysis/compare_scene_scores.py \
   --output_dir analysis_output/drivor_vs_geometry
 ```
 
-For proposal diagnostics, the script verifies this identity per scene:
+对 proposal 诊断输入，脚本会逐场景校验以下恒等式：
 
 ```text
 delta_selected = delta_oracle + (baseline_regret - variant_regret)
 ```
 
-Outputs include paired scene rows, missing tokens, delta quantiles,
-win/tie/loss rates, bootstrap confidence intervals, ECDF/histograms, and the
-largest improvements/regressions.
+输出包括配对场景明细、缺失 token 列表、差值分位数、胜/平/负比例、bootstrap
+置信区间、ECDF/直方图，以及最大提升/最大回退的场景列表。
 
-Extract model-independent scene attributes before sliced comparison:
+切片对比前，先提取与模型无关的场景属性：
 
 ```bash
 python3 analysis/extract_scene_attributes.py \
@@ -200,15 +195,15 @@ python3 analysis/compare_scene_scores.py \
   --output_dir analysis_output/drivor_vs_geometry_sliced
 ```
 
-Default slices cover map, maneuver, speed, future-path geometry, intersection,
-traffic-light state, nearby-agent density/distance, and vulnerable road users.
-Slice definitions use fixed thresholds and do not inspect model scores.
+默认切片覆盖：地图、机动类型、速度、未来路径几何复杂度、路口、红绿灯状态、
+周边 agent 密度/距离、弱势道路使用者(VRU)。切片定义使用固定阈值，不依赖任何
+模型分数。
 
-## 6. ViT Attention Visualization
+## 6. ViT 注意力可视化
 
-Visualize DrivoR image-backbone attention maps. This script uses current
-`default_training.yaml`, current Dataset construction, and current image encoder
-path. It does not use `quantize.utils` or AR/tokenizer targets.
+可视化 DrivoR 图像 backbone 的注意力图。脚本使用当前的
+`default_training.yaml`、当前 Dataset 构建方式和当前图像编码器路径，不依赖
+`quantize.utils` 或 AR/tokenizer 目标。
 
 ```bash
 python3 analysis/visualize_vit_attention.py \
@@ -225,19 +220,18 @@ python3 analysis/visualize_vit_attention.py \
   --queries 0
 ```
 
-Notes:
+注意事项：
 
-- `--queries` uses prefix-token indices. Scene tokens are normally
-  `0..num_scene_tokens-1`.
-- First patch token is inferred from the actual ViT sequence length; do not
-  assume it equals `num_scene_tokens`.
-- `--merge_lora` merges LoRA adapters before hook registration if you want to
-  inspect the merged base ViT path.
+- `--queries` 使用前缀 token 索引。scene token 通常是
+  `0..num_scene_tokens-1`。
+- 第一个 patch token 的位置由实际 ViT 序列长度推断，不要假设它等于
+  `num_scene_tokens`。
+- `--merge_lora` 会在注册 hook 之前把 LoRA 适配器合并进基础 ViT，用于观察
+  合并后的 ViT 路径。
 
-## 7. Image Backbone Latency
+## 7. 图像 Backbone 延迟基准
 
-Benchmark only the DrivoR `ImgEncoder`. This does not include full-agent
-decoding or online VGGT teacher cost.
+只测 DrivoR 的 `ImgEncoder`，不包含完整 agent 解码或在线 VGGT teacher 的开销。
 
 ```bash
 python3 analysis/benchmark_backbone_latency.py \
@@ -250,7 +244,7 @@ python3 analysis/benchmark_backbone_latency.py \
   --warmup 10
 ```
 
-Quick smoke test:
+快速冒烟测试：
 
 ```bash
 python3 analysis/benchmark_backbone_latency.py \
@@ -260,7 +254,7 @@ python3 analysis/benchmark_backbone_latency.py \
   --warmup 1
 ```
 
-Optional pruning benchmark:
+可选的剪枝基准：
 
 ```bash
 python3 analysis/benchmark_backbone_latency.py \
@@ -269,9 +263,9 @@ python3 analysis/benchmark_backbone_latency.py \
   --prune-last-blocks 2
 ```
 
-## Verification
+## 验证
 
-Syntax check:
+语法检查：
 
 ```bash
 python3 -m py_compile \
@@ -288,11 +282,10 @@ python3 -m py_compile \
 python3 -m unittest analysis/test_scene_score_analysis.py
 ```
 
-Static scope check:
+静态范围检查：
 
 ```bash
 grep -R "from quantize\\|import quantize\\|trajectory_indices\\|history_trajectory_indices\\|tokenizer\\|dvdyaw\\|dv_dyaw\\|dxdy\\|acc_alpha" -n analysis/*.py
 ```
 
-Expected result: no matches, except explanatory text if you intentionally grep
-Markdown files.
+预期结果：无匹配（若有意 grep Markdown 文件，说明性文字除外）。
