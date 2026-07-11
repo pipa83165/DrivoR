@@ -32,7 +32,7 @@ import torch.distributed as dist
 from hydra.utils import instantiate
 from nuplan.planning.script.builders.logging_builder import build_logger
 from nuplan.planning.utils.multithreading.worker_utils import worker_map
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 
 from navsim.agents.abstract_agent import AbstractAgent
@@ -135,6 +135,7 @@ def main(cfg: DictConfig) -> None:
         scene_filter=scene_filter,
         sensor_config=agent.get_sensor_config(),
     )
+    vggt_geometry_cfg = OmegaConf.select(cfg, "agent.config.vggt_geometry")
     dataset = Dataset(
         scene_loader=scene_loader_inference,
         feature_builders=agent.get_feature_builders(),
@@ -142,6 +143,7 @@ def main(cfg: DictConfig) -> None:
         cache_path=None,
         force_cache_computation=False,
         append_token_to_batch=True,
+        vggt_geometry_cfg=vggt_geometry_cfg,
     )
     dataloader = DataLoader(dataset, **cfg.dataloader.params, shuffle=False)
     trainer = pl.Trainer(**cfg.trainer.params)

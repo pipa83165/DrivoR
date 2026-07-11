@@ -13,6 +13,7 @@ from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 import torch.distributed as dist
 import pytorch_lightning as pl
+from pytorch_lightning.loggers import TensorBoardLogger
 
 from navsim.agents.abstract_agent import AbstractAgent
 from navsim.common.dataclasses import SceneFilter
@@ -168,7 +169,17 @@ def main(cfg: DictConfig) -> None:
         cfg.train_ckpt_path = find_latest_checkpoint(search_pattern)
         print("cfg.train_ckpt_path ", cfg.train_ckpt_path)
 
-    trainer = pl.Trainer(**cfg.trainer.params, callbacks=agent.get_training_callbacks())
+    tensorboard_logger = TensorBoardLogger(
+        save_dir=cfg.output_dir,
+        name="lightning_logs",
+        default_hp_metric=False,
+    )
+
+    trainer = pl.Trainer(
+        **cfg.trainer.params,
+        callbacks=agent.get_training_callbacks(),
+        logger=tensorboard_logger,
+    )
 
     if cfg.validation_run:
         logger.info("Starting Validation")

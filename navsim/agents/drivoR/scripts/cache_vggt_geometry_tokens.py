@@ -35,7 +35,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", required=True, help="Output token cache directory.")
     parser.add_argument("--config-dir", default="navsim/planning/script/config/training", help="Hydra training config directory.")
     parser.add_argument("--config-name", default="default_training", help="Hydra training config name.")
-    parser.add_argument("--split", default="train", help="train/navtrain, val/navval, or trainval.")
+    parser.add_argument("--split", default="train", help="train/navtrain, val/navval, test/navtest, or trainval.")
     parser.add_argument("--max-samples", type=int, default=None, help="Optional cap for smoke tests.")
     parser.add_argument("--skip-existing", action="store_true", help="Skip tokens that already have a cache file.")
     parser.add_argument("--validate-existing", action="store_true", help="Deep-check existing token files before skipping.")
@@ -85,8 +85,10 @@ def build_scene_loader(cfg, args: argparse.Namespace) -> SceneLoader:
         selected_logs.extend(cfg.train_logs)
     if split in ("val", "navval", "trainval"):
         selected_logs.extend(cfg.val_logs)
+    if split in ("test", "navtest"):
+        selected_logs.extend(cfg.test_logs)
     if not selected_logs:
-        raise ValueError("--split must be train/navtrain, val/navval, or trainval")
+        raise ValueError("--split must be train/navtrain, val/navval, test/navtest, or trainval")
 
     if scene_filter.log_names is not None:
         scene_filter.log_names = [log_name for log_name in scene_filter.log_names if log_name in selected_logs]

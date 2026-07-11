@@ -46,13 +46,33 @@ class DrivoRModel(nn.Module):
         if len(self._config["lidar_pc"]) > 0:
             self.num_lidar += 1
 
+        vggt_geometry_cfg = cfg_get(config, "vggt_geometry", None)
+        self.vggt_geometry_cfg = vggt_geometry_cfg
+        self.vggt_geometry_enabled = bool(vggt_geometry_cfg and cfg_get(vggt_geometry_cfg, "enabled", False))
+        self.vggt_geometry_geo_only = bool(
+            self.vggt_geometry_enabled and cfg_get(vggt_geometry_cfg, "geo_only", False)
+        )
+        if self.vggt_geometry_geo_only and self.num_lidar > 0:
+            raise ValueError("geo_only expects a camera-only config (no lidar branch)")
+
+        backbone_model_name = cfg_get(cfg_get(config, "image_backbone", None), "model_name", None)
+        if backbone_model_name == "vggt_omega_1b" and self.vggt_geometry_enabled:
+            raise ValueError(
+                "vggt_omega_1b backbone must not be combined with vggt_geometry.enabled=true"
+            )
+
         # create the image backbone
-        if self.num_cams > 0:
+        if self.num_cams > 0 and not self.vggt_geometry_geo_only:
             config_image_backbone = config["image_backbone"]
             config_image_backbone["image_size"] = config["image_size"]
             config_image_backbone["num_scene_tokens"] = config["num_scene_tokens"]
             config_image_backbone["tf_d_model"] = config["tf_d_model"]
-            self.image_backbone = ImgEncoder(config_image_backbone)
+            if config_image_backbone.get("model_name") == "vggt_omega_1b":
+                from navsim.agents.drivoR_vggt_omega.vggt_omega_backbone import VggtOmegaImgEncoder
+
+                self.image_backbone = VggtOmegaImgEncoder(config_image_backbone)
+            else:
+                self.image_backbone = ImgEncoder(config_image_backbone)
             self.scene_embeds = nn.Parameter(torch.randn(1, self.num_cams, self._config.num_scene_tokens, self.image_backbone.num_features)*1e-6, requires_grad=True)
 
             # print("self.scene_embeds ", self.scene_embeds)
@@ -104,9 +124,6 @@ class DrivoRModel(nn.Module):
 
         self.b2d = config.b2d
 
-        vggt_geometry_cfg = cfg_get(config, "vggt_geometry", None)
-        self.vggt_geometry_cfg = vggt_geometry_cfg
-        self.vggt_geometry_enabled = bool(vggt_geometry_cfg and cfg_get(vggt_geometry_cfg, "enabled", False))
         self.vggt_geometry_mode = "normal"
         self.vggt_geometry_source = "cache"
         self.__dict__["_vggt_geometry_teacher"] = None
@@ -117,6 +134,8 @@ class DrivoRModel(nn.Module):
                 raise ValueError(f"Unknown VGGT geometry mode: {self.vggt_geometry_mode}")
             if self.vggt_geometry_source not in ("cache", "online"):
                 raise ValueError(f"Unknown VGGT geometry source: {self.vggt_geometry_source}")
+            if self.vggt_geometry_geo_only and self.vggt_geometry_mode == "drop":
+                raise ValueError("geo_only forbids mode=drop: memory would be empty at eval")
 
             self.vggt_geometry_tokens_per_cam = tokens_per_camera(vggt_geometry_cfg)
             self.vggt_geometry_projector = VggtGeometryProjector(
@@ -124,6 +143,7 @@ class DrivoRModel(nn.Module):
                 config.tf_d_model,
                 num_cams=4,
                 tokens_per_cam=self.vggt_geometry_tokens_per_cam,
+                use_gate=bool(cfg_get(vggt_geometry_cfg, "use_layerscale_gate", True)),
             )
 
             if self.vggt_geometry_source == "online":
@@ -175,32 +195,35 @@ class DrivoRModel(nn.Module):
 
 
 
-        scene_features = []
-        # image features
-        if self.num_cams > 0:
-            
-            if "image" in features :
-                img = features["image"]
-            elif "camera_feature" in features:
-                img = features["camera_feature"]
-            else:
-                raise ValueError
+        if self.vggt_geometry_enabled and self.vggt_geometry_geo_only:
+            scene_features = ego_token.new_zeros(batch_size, 0, ego_token.shape[-1])
+        else:
+            scene_features = []
+            # image features
+            if self.num_cams > 0:
+                
+                if "image" in features :
+                    img = features["image"]
+                elif "camera_feature" in features:
+                    img = features["camera_feature"]
+                else:
+                    raise ValueError
 
-            scene_tokens = self.scene_embeds.repeat(batch_size, 1, 1, 1)
-            image_scene_tokens = self.image_backbone(img, scene_tokens)
+                scene_tokens = self.scene_embeds.repeat(batch_size, 1, 1, 1)
+                image_scene_tokens = self.image_backbone(img, scene_tokens)
 
-            log.debug(f"Backbone image - {image_scene_tokens.shape}")
-            scene_features.append(image_scene_tokens)
+                log.debug(f"Backbone image - {image_scene_tokens.shape}")
+                scene_features.append(image_scene_tokens)
 
-        # lidar features
-        if self.num_lidar > 0:
-            img = features["lidar_feature"]
-            scene_tokens = self.lidar_scene_embeds.repeat(batch_size, 1, 1, 1)
-            lidar_scene_tokens = self.lidar_backbone(img, scene_tokens)
-            log.debug(f"Backbone lidar - {lidar_scene_tokens.shape}")
-            scene_features.append(lidar_scene_tokens)
+            # lidar features
+            if self.num_lidar > 0:
+                img = features["lidar_feature"]
+                scene_tokens = self.lidar_scene_embeds.repeat(batch_size, 1, 1, 1)
+                lidar_scene_tokens = self.lidar_backbone(img, scene_tokens)
+                log.debug(f"Backbone lidar - {lidar_scene_tokens.shape}")
+                scene_features.append(lidar_scene_tokens)
 
-        scene_features = torch.cat(scene_features, dim=1)
+            scene_features = torch.cat(scene_features, dim=1)
 
         # Append frozen VGGT-Omega geometry tokens only at decoder memory.
         if self.vggt_geometry_enabled:
@@ -263,6 +286,5 @@ class DrivoRModel(nn.Module):
         output["pdm_score"] = pdm_score
 
         return output
-
 
 

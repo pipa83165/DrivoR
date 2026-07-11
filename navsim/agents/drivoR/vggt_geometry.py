@@ -162,7 +162,14 @@ def _select_tensor(data: Any) -> torch.Tensor:
 class VggtGeometryProjector(nn.Module):
     """Project frozen VGGT-Omega tokens into DrivoR decoder memory space."""
 
-    def __init__(self, vggt_dim: int, d_model: int, num_cams: int = 4, tokens_per_cam: int = 16) -> None:
+    def __init__(
+        self,
+        vggt_dim: int,
+        d_model: int,
+        num_cams: int = 4,
+        tokens_per_cam: int = 16,
+        use_gate: bool = True,
+    ) -> None:
         super().__init__()
         self.tokens_per_cam = int(tokens_per_cam)
         self.input_ln = nn.LayerNorm(vggt_dim)
@@ -170,7 +177,7 @@ class VggtGeometryProjector(nn.Module):
         self.branch_embed = nn.Parameter(torch.zeros(1, 1, 1, d_model))
         self.cam_embed = nn.Parameter(torch.randn(1, num_cams, 1, d_model) * 1e-3)
         self.out_ln = nn.LayerNorm(d_model)
-        self.gate = LayerScale(d_model, init_values=0.0, inplace=False)
+        self.gate = LayerScale(d_model, init_values=0.0, inplace=False) if use_gate else nn.Identity()
 
     def forward(self, geo: torch.Tensor) -> torch.Tensor:
         if geo.ndim != 4:
