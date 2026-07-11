@@ -153,6 +153,11 @@ oracle_score = max(true proposal PDM scores)
 ranking_regret = oracle_score - selected_score
 ```
 
+Proposal truth scores use `navsim.evaluate.pdm_score` and the standard scoring
+configuration. Each proposal is evaluated independently against the cached PDM
+reference trajectory, matching the normal single-trajectory evaluation
+semantics; the script does not require training-only `metric_cache.pdm_progress`.
+
 ## 5. Paired Scene-Level Delta and Slice Analysis
 
 Compare either two normal PDM score CSVs or two `proposal_diagnostics.csv`

@@ -4,12 +4,15 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import asdict
 from pathlib import Path
 from typing import Dict, List
 
 import numpy as np
 import pandas as pd
 import torch
+from hydra.utils import instantiate
+from omegaconf import OmegaConf
 from tqdm import tqdm
 
 from drivor_analysis_utils import (
@@ -22,8 +25,9 @@ from drivor_analysis_utils import (
     move_to_device,
     set_cfg_value,
 )
-from navsim.agents.drivoR.score_module.compute_navsim_score import get_scores
+from navsim.common.dataclasses import Trajectory
 from navsim.common.dataloader import MetricCacheLoader
+from navsim.evaluate.pdm_score import pdm_score
 
 
 SUB_SCORE_COLS = [
@@ -41,6 +45,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ckpt_path", required=True, help="DrivoR Lightning checkpoint")
     parser.add_argument("--metric_cache_path", required=True)
     parser.add_argument(
+        "--scoring_config",
+        default="navsim/planning/script/config/pdm_scoring/default_scoring_parameters.yaml",
+    )
+    parser.add_argument(
         "--config_path",
         default="navsim/planning/script/config/training/default_training.yaml",
     )
@@ -56,22 +64,40 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def load_scoring_components(config_path: str):
+    config = OmegaConf.load(config_path)
+    simulator = instantiate(config.simulator)
+    scorer = instantiate(config.scorer)
+    if simulator.proposal_sampling != scorer.proposal_sampling:
+        raise AssertionError("Simulator and scorer proposal sampling must be identical")
+    return simulator, scorer
+
+
 def score_proposals(
-    tokens: List[str], proposals: torch.Tensor, metric_cache_paths: Dict[str, Path]
+    tokens: List[str], proposals: torch.Tensor, metric_cache_loader, simulator, scorer
 ) -> np.ndarray:
-    missing = [token for token in tokens if token not in metric_cache_paths]
+    missing = [token for token in tokens if token not in metric_cache_loader.metric_cache_paths]
     if missing:
         raise KeyError(f"Missing metric cache for {len(missing)} token(s), first={missing[0]}")
-    data_points = [
-        {
-            "token": metric_cache_paths[token],
-            "poses": proposal.detach().cpu().numpy(),
-            "test": True,
-        }
-        for token, proposal in zip(tokens, proposals)
-    ]
-    results = get_scores(data_points)
-    return np.stack([result[0] for result in results])
+
+    batch_scores = []
+    for token, proposal_set in zip(tokens, proposals.detach().cpu().numpy()):
+        metric_cache = metric_cache_loader.get_from_token(token)
+        proposal_scores = []
+        for proposal in proposal_set:
+            result = pdm_score(
+                metric_cache=metric_cache,
+                model_trajectory=Trajectory(proposal.astype(np.float32)),
+                future_sampling=simulator.proposal_sampling,
+                simulator=simulator,
+                scorer=scorer,
+            )
+            result_dict = asdict(result)
+            proposal_scores.append(
+                [result_dict[column] for column in SUB_SCORE_COLS + ["score"]]
+            )
+        batch_scores.append(proposal_scores)
+    return np.asarray(batch_scores, dtype=np.float64)
 
 
 def build_diagnostic_rows(
@@ -145,7 +171,7 @@ def main() -> None:
     disable_backbone_grid_mask(agent)
 
     metric_cache_loader = MetricCacheLoader(Path(args.metric_cache_path))
-    metric_cache_paths = metric_cache_loader.metric_cache_paths
+    simulator, scorer = load_scoring_components(args.scoring_config)
     scene_loader = build_scene_loader(
         data_path=str(cfg.navsim_log_path),
         sensor_blobs_path=str(cfg.sensor_blobs_path),
@@ -170,7 +196,7 @@ def main() -> None:
             predictions = agent.forward(features)
         proposals = predictions["proposals"]
         predicted_scores = predictions["pdm_score"].detach().float().cpu().numpy()
-        true_scores = score_proposals(tokens, proposals, metric_cache_paths)
+        true_scores = score_proposals(tokens, proposals, metric_cache_loader, simulator, scorer)
         batch_scene_rows, batch_proposal_rows = build_diagnostic_rows(
             tokens, predicted_scores, true_scores
         )
