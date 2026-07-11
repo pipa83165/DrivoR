@@ -50,7 +50,11 @@ def clear_device(device: torch.device) -> None:
 def check_lora(checkpoint_path: str, device: torch.device) -> None:
     aggregator = SceneTokenAggregator(grad_checkpointing=False)
     aggregator.load_state_dict(load_aggregator_state_dict(checkpoint_path), strict=True)
-    aggregator.requires_grad_(False).to(device).eval()
+    aggregator.requires_grad_(False)
+
+    apply_lora_to_blocks(aggregator.frame_blocks, rank=32)
+    apply_lora_to_blocks(aggregator.inter_frame_blocks, rank=32)
+    aggregator.to(device).eval()
 
     blocks = list(aggregator.frame_blocks) + list(aggregator.inter_frame_blocks)
     inputs = []
@@ -59,10 +63,7 @@ def check_lora(checkpoint_path: str, device: torch.device) -> None:
         sample = torch.randn(1, 2, block.attn.qkv.in_features, device=device)
         inputs.append(sample)
         with torch.no_grad():
-            outputs_before.append(block.attn.qkv(sample).clone())
-
-    apply_lora_to_blocks(aggregator.frame_blocks, rank=32)
-    apply_lora_to_blocks(aggregator.inter_frame_blocks, rank=32)
+            outputs_before.append(block.attn.qkv.qkv(sample).clone())
 
     wrappers = [module for module in aggregator.modules() if isinstance(module, _LoRA_qkv_timm)]
     if len(wrappers) != 48:
