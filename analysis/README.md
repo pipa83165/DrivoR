@@ -120,7 +120,86 @@ Output:
 
 For a quick smoke test, use `--num_scenes 2`.
 
-## 4. ViT Attention Visualization
+## 4. Proposal Generation vs Ranking Diagnostics
+
+Export the true PDM quality of every final decoder proposal together with the
+proposal selected by DrivoR's learned scorer:
+
+```bash
+python3 analysis/export_proposal_diagnostics.py \
+  --ckpt_path /path/to/last.ckpt \
+  --metric_cache_path "$NAVSIM_EXP_ROOT/metric_cache" \
+  --split navtest \
+  --data_path "$OPENSCENE_DATA_ROOT/navsim_logs/test" \
+  --sensor_blobs_path "$OPENSCENE_DATA_ROOT/sensor_blobs/test" \
+  --output_dir analysis_output/baseline_proposal_diagnostics
+```
+
+For a geometry-enabled checkpoint, pass the same repeatable
+`--hydra_override` values used for evaluation. The script uses the current
+Dataset path, including geometry-cache injection.
+
+Outputs:
+
+- `proposal_diagnostics.csv`: one row per scene with selected score, oracle
+  score, ranking regret, hit@1/hit@5, and selected/oracle subscores.
+- `proposal_scores.csv`: one row per proposal with predicted score, true PDM
+  score, subscores, and selected/oracle flags.
+
+Definitions:
+
+```text
+oracle_score = max(true proposal PDM scores)
+ranking_regret = oracle_score - selected_score
+```
+
+## 5. Paired Scene-Level Delta and Slice Analysis
+
+Compare either two normal PDM score CSVs or two `proposal_diagnostics.csv`
+files. Inputs are joined by token; invalid/average rows are removed and
+unmatched tokens are reported.
+
+```bash
+python3 analysis/compare_scene_scores.py \
+  --baseline_csv analysis_output/baseline/proposal_diagnostics.csv \
+  --variant_csv analysis_output/geometry/proposal_diagnostics.csv \
+  --baseline_name drivor \
+  --variant_name geometry_normal \
+  --output_dir analysis_output/drivor_vs_geometry
+```
+
+For proposal diagnostics, the script verifies this identity per scene:
+
+```text
+delta_selected = delta_oracle + (baseline_regret - variant_regret)
+```
+
+Outputs include paired scene rows, missing tokens, delta quantiles,
+win/tie/loss rates, bootstrap confidence intervals, ECDF/histograms, and the
+largest improvements/regressions.
+
+Extract model-independent scene attributes before sliced comparison:
+
+```bash
+python3 analysis/extract_scene_attributes.py \
+  --data_path "$OPENSCENE_DATA_ROOT/navsim_logs/test" \
+  --sensor_blobs_path "$OPENSCENE_DATA_ROOT/sensor_blobs/test" \
+  --split navtest \
+  --output_csv analysis_output/navtest_scene_attributes.csv
+
+python3 analysis/compare_scene_scores.py \
+  --baseline_csv analysis_output/baseline/proposal_diagnostics.csv \
+  --variant_csv analysis_output/geometry/proposal_diagnostics.csv \
+  --attributes_csv analysis_output/navtest_scene_attributes.csv \
+  --min_slice_size 30 \
+  --output_dir analysis_output/drivor_vs_geometry_sliced
+```
+
+Default slices cover map, maneuver, speed, future-path geometry, intersection,
+traffic-light state, nearby-agent density/distance, and vulnerable road users.
+Slice definitions use fixed thresholds and do not inspect model scores.
+
+## 6. ViT Attention Visualization
 
 Visualize DrivoR image-backbone attention maps. This script uses current
 `default_training.yaml`, current Dataset construction, and current image encoder
@@ -150,7 +229,7 @@ Notes:
 - `--merge_lora` merges LoRA adapters before hook registration if you want to
   inspect the merged base ViT path.
 
-## 5. Image Backbone Latency
+## 7. Image Backbone Latency
 
 Benchmark only the DrivoR `ImgEncoder`. This does not include full-agent
 decoding or online VGGT teacher cost.
@@ -194,9 +273,14 @@ python3 -m py_compile \
   analysis/drivor_analysis_utils.py \
   analysis/analyze_score_distribution.py \
   analysis/evaluate_gt_trajectory.py \
+  analysis/export_proposal_diagnostics.py \
+  analysis/compare_scene_scores.py \
+  analysis/extract_scene_attributes.py \
   analysis/visualize_low_score_cases.py \
   analysis/visualize_vit_attention.py \
   analysis/benchmark_backbone_latency.py
+
+python3 -m unittest analysis/test_scene_score_analysis.py
 ```
 
 Static scope check:
