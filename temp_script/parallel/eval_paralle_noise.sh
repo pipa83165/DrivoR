@@ -5,16 +5,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$REPO_ROOT"
 
-export NUPLAN_MAP_VERSION="nuplan-maps-v1.0"
-export NUPLAN_MAPS_ROOT="./dataset/maps"
-export NAVSIM_EXP_ROOT="/high_perf_store3/world-model/weixiaobao/yzj/DrivoR/exp" 
-export NAVSIM_DEVKIT_ROOT="/high_perf_store3/world-model/weixiaobao/yzj/DrivoR" 
-export OPENSCENE_DATA_ROOT="./dataset"
+export NUPLAN_MAP_VERSION="${NUPLAN_MAP_VERSION:-nuplan-maps-v1.0}"
+export NUPLAN_MAPS_ROOT="${NUPLAN_MAPS_ROOT:-$REPO_ROOT/dataset/maps}"
+export NAVSIM_EXP_ROOT="${NAVSIM_EXP_ROOT:-$REPO_ROOT/exp}"
+export NAVSIM_DEVKIT_ROOT="${NAVSIM_DEVKIT_ROOT:-$REPO_ROOT}"
+export OPENSCENE_DATA_ROOT="${OPENSCENE_DATA_ROOT:-$REPO_ROOT/dataset}"
 export HYDRA_FULL_ERROR=1
-export SUBSCORE_PATH=$NAVSIM_EXP_ROOT
+export SUBSCORE_PATH="${SUBSCORE_PATH:-$NAVSIM_EXP_ROOT}"
 export RAY_DEDUP_LOGS=0
-
-export CUDA_VISIBLE_DEVICES=0,1,2,3
+export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3}"
 
 
 MODE="${MODE:-noise}" 
