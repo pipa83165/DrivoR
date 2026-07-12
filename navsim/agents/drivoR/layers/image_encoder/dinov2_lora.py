@@ -14,6 +14,7 @@ from einops import rearrange
 from safetensors import safe_open
 from safetensors.torch import save_file
 from .grid_mask import GridMask
+from .lingbot_vision_lora import build_lingbot_backbone
 from navsim.agents.drivoR.utils import pylogger
 log = pylogger.get_pylogger(__name__)
 
@@ -272,41 +273,51 @@ class ImgEncoder(torch.nn.Module):
         super().__init__()
 
 
-        model_name = config.model_name
         self.num_prefix_tokens = config.num_scene_tokens
-        if model_name not in self.model_names:
-            raise ValueError(f"Unknown model name: {repr(model_name)}")
+        self.impl = config.get("impl", "timm")
+
+        if self.impl == "lingbot":
+            self.model = build_lingbot_backbone(config)
+            self.patch_size = self.model.patch_size
+        elif self.impl == "timm":
+            model_name = config.model_name
+            if model_name not in self.model_names:
+                raise ValueError(f"Unknown model name: {repr(model_name)}")
+            else:
+                print("loading ", model_name)
+            pretrained_cfg_overlay = {
+                "file": config.model_weights,
+            }
+
+            in_chans = config.in_chans if "in_chans" in config else 3
+
+            # HACK: to deal with new numpy version that does not allow pickle by default
+            # Create a context manager to temporarily modify np.load
+            np_load_old = np.load
+            np.load = lambda *a,**k: np_load_old(*a, allow_pickle=True, **k)
+            try:
+                self.model = timm.create_model(
+                    model_name,
+                    pretrained=True,
+                    pretrained_cfg_overlay=pretrained_cfg_overlay,
+                    img_size=(config.image_size[1], config.image_size[0]),
+                    num_classes=0,
+                    in_chans=in_chans)
+            except:
+                self.model = timm.create_model(
+                    model_name,
+                    pretrained=True,
+                    img_size=(config.image_size[1], config.image_size[0]),
+                    num_classes=0,
+                    in_chans=in_chans)
+            np.load = np_load_old
+
+            self.model.__class__ = timm_ViT
+            self.patch_size = self.model.patch_embed.patch_size[0]
         else:
-            print("loading ", model_name)
-        pretrained_cfg_overlay = {
-            "file": config.model_weights,
-        }
-        
+            raise ValueError(f"Unknown image_backbone.impl: {self.impl!r}")
+
         in_chans = config.in_chans if "in_chans" in config else 3
-        
-        # HACK: to deal with new numpy version that does not allow pickle by default
-        # Create a context manager to temporarily modify np.load
-        np_load_old = np.load
-        np.load = lambda *a,**k: np_load_old(*a, allow_pickle=True, **k)
-        try:
-            self.model = timm.create_model(
-                model_name,
-                pretrained=True,
-                pretrained_cfg_overlay=pretrained_cfg_overlay,
-                img_size=(config.image_size[1], config.image_size[0]),
-                num_classes=0,
-                in_chans=in_chans)
-        except:
-            self.model = timm.create_model(
-                model_name,
-                pretrained=True,
-                img_size=(config.image_size[1], config.image_size[0]),
-                num_classes=0,
-                in_chans=in_chans)
-        np.load = np_load_old
-        
-        self.model.__class__ = timm_ViT
-        self.patch_size = self.model.patch_embed.patch_size[0]
         self.use_lora = config.use_lora
         self.finetune = config.finetune
 
@@ -352,6 +363,10 @@ class ImgEncoder(torch.nn.Module):
         self.focus_front_cam = config.focus_front_cam
         self.compress_fc = config.compress_fc
         if self.compress_fc:
+            assert self.impl == "timm", (
+                "compress_fc hardcodes 3957 = 3936 timm patch14 tokens + 16 scene + 4 reg + 1 cls; "
+                "it does not match the lingbot token count and needs a new constant before use."
+            )
             self.compress_fc_layer = torch.nn.Linear(3957, self.num_prefix_tokens)
 
 

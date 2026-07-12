@@ -11,13 +11,13 @@ config:
   proposal_num: 64 # number of proposals (trajectories)
   num_poses: 8 # size if the trajectories
 
-  num_scene_tokens: 16 
+  num_scene_tokens: 16
   one_token_per_traj: true
   full_history_status: false
 
   long_trajectory_additional_poses: -1 # to load additional poses (not use currently in this version)
 
-  noc: 1.0 
+  noc: 1.0
   dac: 1.0
   ddc: 0.0
   ttc: 5.0
@@ -59,22 +59,23 @@ config:
 
   ####################
   # image branch params
-  image_size: [1148, 672] # input image size
-  
+  image_size: [1152, 672] # patch 16: 1148 does not divide evenly, see design doc §2.3.1
+
   image_backbone:
-    impl: timm
-    model_name: timm/vit_small_patch14_reg4_dinov2.lvd142m
-    model_weights: weights/vit_small_patch14_reg4_dinov2.lvd142m/model.safetensors
+    impl: lingbot
+    variant: small
+    model_weights: weight/lingbot-vision-vit-small/
     use_lora: true
     finetune: false
     lora_rank: 32
     focus_front_cam: false
     use_feature_pooling: false
     compress_fc: false
+    rope_train_aug: false
 
 
   # fov: [[-50., -50., -5.], [50., 50., 5.]] # simplebev field of view
-  # voxel_grid: [100, 100, 8] # simple voxel grid size 
+  # voxel_grid: [100, 100, 8] # simple voxel grid size
   # bev_encoder_conv_only: true # true, drop the classifier | false, classifier thus one scene vector
 
   #####################
@@ -106,7 +107,7 @@ config:
   bev_agent: false
   refiner_num_heads: 1
   refiner_ls_values: 0.0
-  
+
   trajectory_sampling:
     _target_: nuplan.planning.simulation.trajectory.trajectory_sampling.TrajectorySampling
     time_horizon: 4
@@ -131,11 +132,11 @@ loss:
 
 
 checkpoint_path: ''
-lr_args: 
+lr_args:
   name: AdamW
   base_lr: 5e-4
   base_batch_size: 64
-scheduler_args: 
+scheduler_args:
   num_epochs: ${trainer.params.max_epochs}
   dataset_size: 85000 # for navsim
 

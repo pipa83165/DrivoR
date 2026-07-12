@@ -13,5 +13,5 @@ __pycache__/
 /carla/
 *egg*
 .DS_Store
-weight/*.pt
+weight/*
 /paper
