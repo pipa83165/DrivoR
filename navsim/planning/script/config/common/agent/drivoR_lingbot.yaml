@@ -64,7 +64,7 @@ config:
   image_backbone:
     impl: lingbot
     variant: small
-    model_weights: weight/lingbot-vision-vit-small/
+    model_weights: weights/lingbot-vision-vit-small/
     use_lora: true
     finetune: false
     lora_rank: 32

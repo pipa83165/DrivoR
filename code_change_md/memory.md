@@ -80,4 +80,16 @@ geo_only 专属键(不在 yaml 里,运行时 `++` 注入,不进缓存指纹):`ge
 
 1. 并联入口统一位于 `temp_script/parallel/`,脚本文件、默认实验名与 checkpoint 实验名统一使用 `paralle`。训练缓存默认读取 `$REPO_ROOT/vggtomega_geometry_tokens`,评测缓存默认读取 `$REPO_ROOT/vggtomega_geometry_tokens_navtest`。
 2. 几何分支实现统一位于 `navsim/agents/drivoR/vggt_geometry.py`,`preprocess_arrays_for_teacher`、投影器、教师和缓存 provider 均从该模块使用。
-3. 本地权重目录是 `weight/vggt_omega_1b_512.pt`(单数),配置与脚本一律写 `weights/vggt_omega_1b_512.pt`(复数,服务器布局)。指纹校验会读该文件算 sha256,路径错在构造期就抛 FileNotFoundError。
+3. 权重目录是 `weights'。指纹校验会读该文件算 sha256,路径错在构造期就抛 FileNotFoundError。
+
+## 8. LingBot-Vision backbone 替换(与 §1~7 的 VGGT-Ω 几何分支相互独立)
+
+新增第四条实验路径,替换(而非拼接)image backbone,把 DINOv2 ViT-S 换成 LingBot-Vision ViT-S/16。设计文档:`code_change_md/design/lingbotvisionbackbonereplacement.md`(已按"只留工程实现"精简,理论/假设内容不在其中)。
+
+- 源码 vendor 在仓库根目录 `lingbot_vision/`(与上游本应逐字节一致,但见下方 py3.9 例外)。
+- 新文件 `navsim/agents/drivoR/layers/image_encoder/lingbot_vision_lora.py`:`LingBotBackbone` 包一层 `LingBotVisionTransformer`,手写 `forward_features(x, scene_tokens)`(scene tokens 拼在序列最前,RoPE 的 `prefix = N - H*W` 运行时推断天然把它们当无位置 token);`build_lingbot_backbone(config)` 走 `load_config → build_backbone_from_cfg → load_state_dict` 分步路径(不用 `load_pretrained_backbone`,那个会锁 bf16/eval/frozen)。
+- `dinov2_lora.py::ImgEncoder.__init__` 按 `config.impl ∈ {timm, lingbot}` 分派构建 `self.model`,其余(LoRA 手术、grid_mask、neck、pooling)完全复用不动——因为 `LingBotBackbone` 对外接口(`forward_features`/`num_features`/`patch_size`/`blocks`)和 timm 版一致。
+- Config:`drivoR.yaml` 加了 `image_backbone.impl: timm`(默认,不影响基线);新增 `drivoR_lingbot.yaml`(`impl: lingbot`, `variant: small`, `model_weights: weight/lingbot-vision-vit-small/`, `image_size: [1152, 672]`,patch16 不整除 1148 故改分辨率)。
+- 脚本:`temp_script/lingbot_backbone/{train,eval}_lingbot_backbone.sh`,逐行照抄 `temp_script/vggtomega_backbone/` 只换 `agent=drivoR_lingbot`。
+
+**py3.9 兼容性例外(2026-07-12)**:vendored `lingbot_vision/vit.py` 和 `layers.py` 用了 PEP604 `float | None` 写法且没有 `from __future__ import annotations`,在 Python 3.9(本项目实际运行环境)下 import 时直接 `TypeError`。已给这两个文件顶部各加一行 `from __future__ import annotations`(只让注解变成延迟求值的字符串,不改变任何运行时逻辑)。这是当前唯一破坏"vendored 代码与上游逐字节一致"约定的地方——以后从上游同步这两个文件时要记得重新补上这一行。

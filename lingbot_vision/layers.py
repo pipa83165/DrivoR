@@ -4,6 +4,8 @@ Contains the building blocks used by the backbone: RoPE position embedding,
 register/storage tokens support, LayerNorm/RMSNorm variants, MLP and SwiGLU
 FFNs, and SDPA attention.
 """
+from __future__ import annotations
+
 import logging
 import math
 from typing import Callable, List, Literal, Optional, Tuple, Union

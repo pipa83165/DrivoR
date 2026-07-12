@@ -7,6 +7,8 @@ load a checkpoint, and call ``forward``. With ``is_training=True`` the forward
 pass returns the token dictionary (CLS token, storage tokens, patch tokens)
 consumed by the PCA demo; otherwise it returns the head output on the CLS token.
 """
+from __future__ import annotations
+
 import logging
 from functools import partial
 from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple, Union
