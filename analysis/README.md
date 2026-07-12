@@ -202,8 +202,7 @@ python3 analysis/compare_scene_scores.py \
 ## 6. ViT 注意力可视化
 
 可视化 DrivoR 图像 backbone 的注意力图。脚本使用当前的
-`default_training.yaml`、当前 Dataset 构建方式和当前图像编码器路径，不依赖
-`quantize.utils` 或 AR/tokenizer 目标。
+`default_training.yaml`
 
 ```bash
 python3 analysis/visualize_vit_attention.py \
